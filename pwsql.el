@@ -20,29 +20,39 @@
 ;;; Code:
 (require 'dash)
 
-(defvar pwsql-server-instance "CRISALFI-ALTEN")
+(defvar pwsql-server-instance "PWSQL-INSTANCE")
+(defvar pwsql-username "pwsql-usr")
+(defvar pwsql-password "pwsql-pwd")
 
-(defun pwsql--query (query-string)
-  "Use a QUERY-STRING to retrieve data from a database through the Powershell."
-  (let ((pscmd (list "$DS = Invoke-Sqlcmd -Query @'\n"
+(defun pwsql--query (query-string &rest args)
+  "Use a QUERY-STRING to retrieve data from a database through the Powershell.
+Return a json string. You can explicit it in ARGS or you can ask for a csv string."
+  (let* ((convert-to (or (plist-get args :convert-to) 'json))
+         (pscmd (list "$DS = Invoke-Sqlcmd -Query @'\n"
                  query-string
-                 (format "\n'@ -ServerInstance '%s' -As DataSet" pwsql-server-instance)
+                 (concat
+                  (format "\n'@ -ServerInstance '%s' " pwsql-server-instance)
+                  (format "-Username '%s' -Password '%s' " pwsql-username pwsql-password)
+                  "-As DataSet")
                  "\n$QTable = $DS.Tables"
                  ; Collect data in a custom hashtable
                  "\n$maht = @{}"
                  "\nforeach ($col in $QTable.Columns)"
                  "\n{ $maht.add($col.ColumnName, $QTable.($col.ColumnName)) }"
-                 ; The custom hashtable is returned as a Json object
-                 "\n$maht | ConvertTo-Json")))
-    (json-read-from-string
-     (with-temp-buffer
-       (let ((status (apply 'call-process "powershell.exe" nil (current-buffer) nil pscmd)))
+                 ; The hashtable is returned as a Json/CSV Object
+                 (concat "\n$maht | "
+                         (pcase convert-to
+                           ('json "ConvertTo-Json")
+                           ;; TODO support CSV
+                           ;; hint: you should re-organize the table
+                           ('csv "ConvertTo-Csv"))))))
+    (with-temp-buffer
+       (let ((status
+              (apply 'call-process "powershell.exe" nil (current-buffer) nil pscmd)))
          (unless (eq status 0)
-       (error "Pwsql exited with status %s" status))
+           (error "Pwsql exited with status %s" status))
          (goto-char (point-min))
-         (buffer-string))))))
-
-;(res (pwsql-query query-string))
+         (buffer-string)))))
 
 (defun pwsql--display-as-org-table (data-tree)
   "Display a pwsql DATA-TREE as a table in an 'org-mode' buffer."
@@ -53,9 +63,9 @@
          ; Values are given as vectors
          (vecs (mapcar (lambda (x) (cdr x)) data-tree))
          ; Convert to sequences
-         (cols (mapcar (lambda (x) (cdr (append x nil))) vecs))
+         (cols (mapcar (lambda (x) (append x nil)) vecs))
          ; Matrix rotation
-         (vals (apply #'-zip cols)))
+         (vals (apply #'-zip-lists cols)))
 
     ; Properly nested sequences
     `(,titles
