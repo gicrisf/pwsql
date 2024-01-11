@@ -6,7 +6,7 @@
 ;; Maintainer: gicrisf <giovanni.crisalfi@protonmail.com>
 ;; Created: December 05, 2023
 ;; Modified: December 05, 2023
-;; Version: 0.0.1
+;; Version: 0.0.2
 ;; Keywords: data tools sql
 ;; Homepage: https://github.com/gicrisf/pwsql
 ;; Package-Requires: ((emacs "24.4"))
@@ -70,6 +70,25 @@ Return a json string. You can explicit it in ARGS or you can ask for a csv strin
     ; Properly nested sequences
     `(,titles
       ,@vals)))
+
+(defun pwsql--table-as-plist (table)
+  "Convert an org TABLE in a comfortable plist."
+  (mapcar (lambda (value)
+            (cl-labels ((recursive-zipper
+                         (symnames resvalues acc)
+                         ; table titles, single result value, accumulator
+                         (if (null resvalues)
+                             acc
+                           (let ((plist-el (list (intern (concat ":" (car symnames)))
+                                                 (car resvalues))))
+                             (recursive-zipper (cdr symnames)
+                                               (cdr resvalues)
+                                               (append plist-el acc))))))
+              (recursive-zipper
+               (car table)
+               (cdr value)
+               nil)))
+          (cdr table)))
 
 (provide 'pwsql)
 ;;; pwsql.el ends here
